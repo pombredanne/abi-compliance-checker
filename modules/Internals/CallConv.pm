@@ -1,10 +1,10 @@
 ###########################################################################
 # Module for ACC tool to create a model of calling conventions
 #
-# Copyright (C) 2009-2010 The Linux Foundation
 # Copyright (C) 2009-2011 Institute for System Programming, RAS
 # Copyright (C) 2011-2012 Nokia Corporation and/or its subsidiary(-ies)
-# Copyright (C) 2011-2013 ROSA Laboratory
+# Copyright (C) 2011-2012 ROSA Laboratory
+# Copyright (C) 2012-2015 Andrey Ponomarenko's ABI Laboratory
 #
 # Written by Andrey Ponomarenko
 #
@@ -1307,9 +1307,20 @@ sub callingConvention_P_Real($$)
         $Conv{"Method"} = "reg";
         $Conv{"Registers"} = join(", ", @R);
     }
-    else {
+    else
+    {
         $Conv{"Method"} = "stack";
+        
+        if(defined $SInfo->{"Param"}
+        and defined $SInfo->{"Param"}{0})
+        {
+            if(not defined $SInfo->{"Param"}{0}{"offset"})
+            {
+                $Conv{"Method"} = "unknown";
+            }
+        }
     }
+    
     return %Conv;
 }
 

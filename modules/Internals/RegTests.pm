@@ -1,10 +1,10 @@
 ###########################################################################
 # Module for ABI Compliance Checker with regression test suite
 #
-# Copyright (C) 2009-2010 The Linux Foundation
 # Copyright (C) 2009-2011 Institute for System Programming, RAS
 # Copyright (C) 2011-2012 Nokia Corporation and/or its subsidiary(-ies)
-# Copyright (C) 2011-2013 ROSA Laboratory
+# Copyright (C) 2011-2012 ROSA Laboratory
+# Copyright (C) 2012-2015 Andrey Ponomarenko's ABI Laboratory
 #
 # Written by Andrey Ponomarenko
 #
@@ -24,15 +24,14 @@
 use strict;
 
 my ($TestDump, $Debug, $Quiet, $ExtendedCheck, $LogMode, $ReportFormat,
-$DumpFormat, $LIB_EXT, $GCC_PATH, $Browse, $OpenReport, $SortDump,
-$CheckHeadersOnly, $CheckObjectsOnly);
+$DumpFormat, $LIB_EXT, $GCC_PATH, $SortDump,
+$CheckHeadersOnly);
 my $OSgroup = get_OSgroup();
 
 sub testTool($$$$$$$$$$$)
 {
     ($TestDump, $Debug, $Quiet, $ExtendedCheck, $LogMode, $ReportFormat,
-    $DumpFormat, $LIB_EXT, $GCC_PATH, $Browse, $OpenReport, $SortDump,
-    $CheckHeadersOnly, $CheckObjectsOnly) = @_;
+    $DumpFormat, $LIB_EXT, $GCC_PATH, $SortDump, $CheckHeadersOnly) = @_;
     
     testC();
     testCpp();
@@ -4078,6 +4077,43 @@ sub testC()
         $DECL_SPEC void* returnTypeChangeToVoidPtr(int param);";
     $SOURCE2 .= "
         void* returnTypeChangeToVoidPtr(int param) { return (void*)0; }";
+    
+    # Return_Type (structure change)
+    $HEADER1 .= "
+        struct SomeStruct2 {
+            int a;
+            int b;
+        };
+        $DECL_SPEC struct SomeStruct2 returnType2(int param);";
+    $SOURCE1 .= "
+        struct SomeStruct2 returnType2(int param) { struct SomeStruct2 r = {1, 2};return r; }";
+    
+    $HEADER2 .= "
+        struct SomeStruct2 {
+            int a;
+        };
+        $DECL_SPEC struct SomeStruct2 returnType2(int param);";
+    $SOURCE2 .= "
+        struct SomeStruct2 returnType2(int param) { struct SomeStruct2 r = {1};return r; }";
+        
+    # Return_Type (structure change)
+    $HEADER1 .= "
+        struct SomeStruct3 {
+            int a;
+            int b;
+        };
+        $DECL_SPEC struct SomeStruct3 returnType3(int param);";
+    $SOURCE1 .= "
+        struct SomeStruct3 returnType3(int param) { struct SomeStruct3 r = {1, 2};return r; }";
+    
+    $HEADER2 .= "
+        struct SomeStruct3 {
+            int a;
+            long double b;
+        };
+        $DECL_SPEC struct SomeStruct3 returnType3(int param);";
+    $SOURCE2 .= "
+        struct SomeStruct3 returnType3(int param) { struct SomeStruct3 r = {1, 2.0L};return r; }";
 
     # Return_Type_From_Void_And_Stack_Layout ("void" to "struct")
     $HEADER1 .= "
@@ -4740,15 +4776,15 @@ sub runTests($$$$$$$$)
                     changedDefaultVersion;
                 };
             ");
-            $BuildCmd = $GCC_PATH." -Wl,--version-script version -shared libsample.$Ext -o libsample.$LIB_EXT -g";
+            $BuildCmd = $GCC_PATH." -Wl,--version-script version -shared libsample.$Ext -o libsample.$LIB_EXT -g -Og";
             $BuildCmd_Test = $GCC_PATH." -Wl,--version-script version test.$Ext -Wl,libsample.$LIB_EXT -o test";
         }
         else
         {
-            $BuildCmd = $GCC_PATH." -shared -x c++ libsample.$Ext -lstdc++ -o libsample.$LIB_EXT -g";
+            $BuildCmd = $GCC_PATH." -shared -x c++ libsample.$Ext -lstdc++ -o libsample.$LIB_EXT -g -Og";
             $BuildCmd_Test = $GCC_PATH." -x c++ test.$Ext -lstdc++ -Wl,libsample.$LIB_EXT -o test";
         }
-        if(getArch(1)=~/\A(arm|x86_64)\Z/i)
+        if(getArch_GCC(1)=~/\A(arm|x86_64)\Z/i)
         { # relocation R_ARM_MOVW_ABS_NC against `a local symbol' can not be used when making a shared object; recompile with -fPIC
             $BuildCmd .= " -fPIC";
             $BuildCmd_Test .= " -fPIC";
@@ -4772,15 +4808,22 @@ sub runTests($$$$$$$$)
       # symbian target
         if($Lang eq "C")
         {
-            $BuildCmd = $GCC_PATH." -shared libsample.$Ext -o libsample.$LIB_EXT -g";
+            $BuildCmd = $GCC_PATH." -shared libsample.$Ext -o libsample.$LIB_EXT -g -Og";
             $BuildCmd_Test = $GCC_PATH." test.$Ext -Wl,libsample.$LIB_EXT -o test";
         }
         else
         { # C++
-            $BuildCmd = $GCC_PATH." -shared -x c++ libsample.$Ext -lstdc++ -o libsample.$LIB_EXT -g";
+            $BuildCmd = $GCC_PATH." -shared -x c++ libsample.$Ext -lstdc++ -o libsample.$LIB_EXT -g -Og";
             $BuildCmd_Test = $GCC_PATH." -x c++ test.$Ext -Wl,libsample.$LIB_EXT -o test";
         }
     }
+    
+    if(my $Opts = getGCC_Opts(1))
+    { # user-defined options
+        $BuildCmd .= " ".$Opts;
+        $BuildCmd_Test .= " ".$Opts;
+    }
+    
     my $MkContent = "all:\n\t$BuildCmd\ntest:\n\t$BuildCmd_Test\n";
     if($OSgroup eq "windows") {
         $MkContent .= "clean:\n\tdel test libsample.so\n";
@@ -4841,15 +4884,6 @@ sub runTests($$$$$$$$)
     }
     if($CheckHeadersOnly) {
         @Cmd = (@Cmd, "-headers-only");
-    }
-    if($CheckObjectsOnly) {
-        @Cmd = (@Cmd, "-objects-only");
-    }
-    if($Browse) {
-        @Cmd = (@Cmd, "-browse", $Browse);
-    }
-    if($OpenReport) {
-        @Cmd = (@Cmd, "-open");
     }
     if($Debug)
     { # debug mode
